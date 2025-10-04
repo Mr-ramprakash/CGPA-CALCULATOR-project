@@ -1,0 +1,79 @@
+import pyodbc
+conn = pyodbc.connect(
+    "DRIVER={ODBC Driver 17 for SQL Server};"
+    "SERVER=localhost\\SQLEXPRESS;"   # Change if different
+    "DATABASE=StudentCGPA;"
+    "Trusted_Connection=yes;"
+)
+cursor = conn.cursor()
+grade_points = {
+    "O": 10,
+    "A+": 9,
+    "A": 8,
+    "B+": 7,
+    "B": 6,
+    "C": 5,
+    "U": 0
+}
+def compute_semester(subjects):
+    total_credits = 0
+    total_points = 0
+    detailed_subjects = []
+
+    for credit, grade in subjects:
+        gp = grade_points[grade]
+        total_credits += credit
+        total_points += credit * gp
+        detailed_subjects.append((credit, grade, gp))
+
+    gpa = total_points / total_credits if total_credits > 0 else 0
+    return gpa, detailed_subjects, total_credits, total_points
+
+def compute_cgpa(all_semesters):
+    total_credits = sum(s["credits"] for s in all_semesters)
+    total_points = sum(s["points"] for s in all_semesters)
+    return total_points / total_credits if total_credits > 0 else 0
+
+def save_to_db(student_name, semester, subjects, gpa, cgpa):
+    for idx, (credit, grade, gp) in enumerate(subjects, start=1):
+        cursor.execute("""
+            INSERT INTO CGPA_Results 
+            (student_name, semester, subject_code, credits, grade, grade_point, gpa, cgpa)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (student_name, semester, f"SUB{idx}", credit, grade, gp, gpa, cgpa))
+    conn.commit()
+    print("✅ Data saved to SQL Server")
+
+student_name = input("Enter Your Name: ")
+num_semesters = int(input("Enter number of semesters: "))
+
+all_semesters = []
+
+for sem in range(1, num_semesters + 1):
+    print(f"\n-- Semester {sem} --")
+    num_subjects = int(input(f"Enter number of subjects in semester {sem}: "))
+
+    subjects = []
+    for sub in range(1, num_subjects + 1):
+        grade = input(f"Enter Grade for Subject {sub} (O,A+,A,B+,B,C,U): ").upper()
+        credit = int(input(f"Enter credits for subject {sub}: "))
+        subjects.append((credit, grade))
+
+    gpa, detailed_subjects, total_credits, total_points = compute_semester(subjects)
+
+    all_semesters.append({"credits": total_credits, "points": total_points})
+
+    cgpa = compute_cgpa(all_semesters)
+
+    print(f"Semester {sem} GPA: {gpa:.2f}")
+    print(f"Credits Registered: {total_credits}, Earned: {sum(c for c,g in subjects if g!='U')}")
+    print(f"Current CGPA after semester {sem}: {cgpa:.2f}")
+
+        save_to_db(student_name, sem, detailed_subjects, gpa, cgpa)
+
+print("\n******** FINAL REPORT ********")
+print(f"Student: {student_name}")
+for i, sem in enumerate(all_semesters, start=1):
+    print(f"Semester {i} GPA: {sem['points']/sem['credits']:.2f}")
+print(f"Final CGPA: {compute_cgpa(all_semesters):.2f}")
+print("********************************")
